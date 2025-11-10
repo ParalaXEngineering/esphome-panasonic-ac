@@ -350,9 +350,6 @@ climate::ClimateMode PanasonicACCNT::determine_mode(uint8_t mode) {
   }
 }
 
-  }
-}
-
 climate::ClimateFanMode PanasonicACCNT::determine_fan_speed(uint8_t speed) {
   switch (speed) {
     case 0xA0:  // Auto
