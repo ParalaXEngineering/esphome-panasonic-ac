@@ -315,13 +315,22 @@ void PanasonicAC::set_compensation_update_interval(uint32_t interval_ms) {
 
 void PanasonicAC::update_temperature_compensation() {
   // Only run if enabled and we have an external sensor
-  if (!this->external_compensation_enabled_ || this->external_temperature_sensor_ == nullptr) {
+  if (!this->external_compensation_enabled_) {
+    ESP_LOGVV(TAG, "Compensation skipped: not enabled");
+    return;
+  }
+  
+  if (this->external_temperature_sensor_ == nullptr) {
+    ESP_LOGVV(TAG, "Compensation skipped: no external sensor");
     return;
   }
 
   // Rate limiting: only update every X minutes
   uint32_t now = millis();
-  if (now - this->last_compensation_update_ < this->compensation_update_interval_) {
+  uint32_t time_since_last = now - this->last_compensation_update_;
+  if (time_since_last < this->compensation_update_interval_) {
+    ESP_LOGVV(TAG, "Compensation skipped: timer (%.1f/%.1f min)", 
+             time_since_last / 60000.0f, this->compensation_update_interval_ / 60000.0f);
     return;
   }
   this->last_compensation_update_ = now;
