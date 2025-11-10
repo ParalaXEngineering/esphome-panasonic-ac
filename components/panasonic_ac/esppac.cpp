@@ -41,6 +41,9 @@ void PanasonicAC::setup() {
 
 void PanasonicAC::loop() {
   read_data();  // Read data from UART (if there is any)
+
+  // Check and apply temperature compensation periodically
+  update_temperature_compensation();
 }
 
 void PanasonicAC::read_data() {
@@ -266,6 +269,97 @@ void PanasonicAC::set_mild_dry_switch(switch_::Switch *mild_dry_switch) {
 
 void PanasonicAC::set_current_power_consumption_sensor(sensor::Sensor *current_power_consumption_sensor) {
   this->current_power_consumption_sensor_ = current_power_consumption_sensor;
+}
+
+/*
+ * External temperature compensation
+ */
+
+void PanasonicAC::set_external_temperature_sensor(sensor::Sensor *external_temperature_sensor) {
+  this->external_temperature_sensor_ = external_temperature_sensor;
+
+  // Set up callback to trigger compensation when external temp changes
+  if (external_temperature_sensor != nullptr) {
+    external_temperature_sensor->add_on_state_callback([this](float state) {
+      if (this->external_compensation_enabled_) {
+        ESP_LOGV(TAG, "External temperature updated: %.1f°C", state);
+        // Compensation will be applied in next loop cycle
+      }
+    });
+  }
+}
+
+void PanasonicAC::set_external_temperature_compensation_enabled(bool enabled) {
+  ESP_LOGD(TAG, "External temperature compensation: %s", enabled ? "ENABLED" : "DISABLED");
+  this->external_compensation_enabled_ = enabled;
+}
+
+void PanasonicAC::set_compensation_dampening_factor(float factor) {
+  // Clamp between 0.0 and 1.0
+  this->compensation_dampening_factor_ = std::max(0.0f, std::min(1.0f, factor));
+  ESP_LOGD(TAG, "Compensation dampening factor: %.2f", this->compensation_dampening_factor_);
+}
+
+void PanasonicAC::set_compensation_update_interval(uint32_t interval_ms) {
+  this->compensation_update_interval_ = interval_ms;
+  ESP_LOGD(TAG, "Compensation update interval: %u ms", interval_ms);
+}
+
+void PanasonicAC::update_temperature_compensation() {
+  // Only run if enabled and we have an external sensor
+  if (!this->external_compensation_enabled_ || this->external_temperature_sensor_ == nullptr) {
+    return;
+  }
+
+  // Rate limiting: only update every X minutes
+  uint32_t now = millis();
+  if (now - this->last_compensation_update_ < this->compensation_update_interval_) {
+    return;
+  }
+  this->last_compensation_update_ = now;
+
+  // Get external temperature
+  float external_temp = this->external_temperature_sensor_->state;
+
+  // Validate sensor reading
+  if (std::isnan(external_temp) || external_temp < -10 || external_temp > 50) {
+    ESP_LOGW(TAG, "Invalid external temperature reading: %.1f°C", external_temp);
+    return;
+  }
+
+  // Calculate temperature error
+  float temp_error = external_temp - this->user_target_temperature_;
+
+  // Calculate compensated AC target (proportional control)
+  // If room is 2°C too warm, set AC target 2°C lower (with dampening)
+  float compensation = temp_error * this->compensation_dampening_factor_;
+  this->calculated_ac_target_ = this->user_target_temperature_ - compensation;
+
+  // Clamp to AC limits
+  this->calculated_ac_target_ = std::max(
+      static_cast<float>(MIN_TEMPERATURE),
+      std::min(static_cast<float>(MAX_TEMPERATURE), this->calculated_ac_target_));
+
+  // Round to AC's temperature step (0.5°C)
+  this->calculated_ac_target_ = std::round(this->calculated_ac_target_ / TEMPERATURE_STEP) * TEMPERATURE_STEP;
+
+  // Only send update if significantly different (> 0.5°C hysteresis)
+  if (std::abs(this->target_temperature - this->calculated_ac_target_) > 0.5f) {
+    ESP_LOGI(TAG,
+             "Compensation: External=%.1f°C, Desired=%.1f°C, Error=%.1f°C, AC Target: %.1f°C → %.1f°C",
+             external_temp, this->user_target_temperature_, temp_error, this->target_temperature,
+             this->calculated_ac_target_);
+
+    // Update the AC target (this will be sent in next control cycle)
+    this->target_temperature = this->calculated_ac_target_;
+
+    // Trigger control update
+    climate::ClimateCall call = this->make_call();
+    call.set_target_temperature(this->calculated_ac_target_);
+    call.perform();
+  } else {
+    ESP_LOGV(TAG, "Compensation: No adjustment needed (delta < 0.5°C)");
+  }
 }
 
 /*

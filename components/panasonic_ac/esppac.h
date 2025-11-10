@@ -45,6 +45,11 @@ class PanasonicAC : public Component, public uart::UARTDevice, public climate::C
   void set_current_temperature_sensor(sensor::Sensor *current_temperature_sensor);
   void set_current_temperature_offset(int8_t current_temperature_offset);
 
+  void set_external_temperature_sensor(sensor::Sensor *external_temperature_sensor);
+  void set_external_temperature_compensation_enabled(bool enabled);
+  void set_compensation_dampening_factor(float factor);
+  void set_compensation_update_interval(uint32_t interval_ms);
+
   void setup() override;
   void loop() override;
 
@@ -58,6 +63,15 @@ class PanasonicAC : public Component, public uart::UARTDevice, public climate::C
   switch_::Switch *mild_dry_switch_ = nullptr;                  // Switch to toggle mild dry mode on/off
   sensor::Sensor *current_temperature_sensor_ = nullptr;        // Sensor to use for current temperature where AC does not report
   sensor::Sensor *current_power_consumption_sensor_ = nullptr;  // Sensor to store current power consumption from queries
+
+  sensor::Sensor *external_temperature_sensor_ = nullptr;  // External room temp sensor for compensation
+  bool external_compensation_enabled_ = false;              // Enable/disable compensation
+  float compensation_dampening_factor_ = 0.8f;              // How much to compensate (0.0-1.0)
+  uint32_t compensation_update_interval_ = 300000;          // Update every 5 min (300000ms)
+  uint32_t last_compensation_update_ = 0;                   // Last update timestamp
+
+  float user_target_temperature_ = 22.0f;                   // What user actually wants
+  float calculated_ac_target_ = 22.0f;                      // What we send to AC
 
   std::string vertical_swing_state_;
   std::string horizontal_swing_state_;
@@ -95,6 +109,8 @@ class PanasonicAC : public Component, public uart::UARTDevice, public climate::C
   void update_econavi(bool econavi);
   void update_mild_dry(bool mild_dry);
   void update_current_power_consumption(int16_t power);
+
+  void update_temperature_compensation();  // Calculate & apply external temperature compensation
 
   virtual void on_horizontal_swing_change(const std::string &swing) = 0;
   virtual void on_vertical_swing_change(const std::string &swing) = 0;

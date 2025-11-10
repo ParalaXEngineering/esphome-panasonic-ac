@@ -77,8 +77,20 @@ void PanasonicACCNT::control(const climate::ClimateCall &call) {
   }
 
   if (call.get_target_temperature().has_value()) {
-    ESP_LOGV(TAG, "Requested target temp change to %.2f, %.2f including offset", *call.get_target_temperature(), *call.get_target_temperature() - this->current_temperature_offset_);
-    this->cmd[1] = (*call.get_target_temperature() - this->current_temperature_offset_) / TEMPERATURE_STEP;
+    // Save what the USER wants (not what we send to AC)
+    if (this->external_compensation_enabled_) {
+      this->user_target_temperature_ = *call.get_target_temperature();
+      ESP_LOGV(TAG, "User requested target temp: %.2f°C", this->user_target_temperature_);
+
+      // Force immediate compensation update
+      this->last_compensation_update_ = 0;
+      this->update_temperature_compensation();
+    } else {
+      // Normal mode: directly set AC target with static offset
+      ESP_LOGV(TAG, "Requested target temp change to %.2f, %.2f including offset", *call.get_target_temperature(),
+               *call.get_target_temperature() - this->current_temperature_offset_);
+      this->cmd[1] = (*call.get_target_temperature() - this->current_temperature_offset_) / TEMPERATURE_STEP;
+    }
   }
 
   if (call.get_fan_mode().has_value()) {

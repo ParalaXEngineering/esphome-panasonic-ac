@@ -42,6 +42,10 @@ CONF_MILD_DRY_SWITCH = "mild_dry_switch"
 CONF_CURRENT_POWER_CONSUMPTION = "current_power_consumption"
 CONF_WLAN = "wlan"
 CONF_CNT = "cnt"
+CONF_EXTERNAL_TEMPERATURE_SENSOR = "external_temperature_sensor"
+CONF_EXTERNAL_COMPENSATION_ENABLED = "external_compensation_enabled"
+CONF_COMPENSATION_DAMPENING_FACTOR = "compensation_dampening_factor"
+CONF_COMPENSATION_UPDATE_INTERVAL = "compensation_update_interval"
 
 HORIZONTAL_SWING_OPTIONS = [
     "auto",
@@ -84,6 +88,10 @@ PANASONIC_CNT_SCHEMA = {
         device_class=DEVICE_CLASS_POWER,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
+    cv.Optional(CONF_EXTERNAL_TEMPERATURE_SENSOR): cv.use_id(sensor.Sensor),
+    cv.Optional(CONF_EXTERNAL_COMPENSATION_ENABLED, default=False): cv.boolean,
+    cv.Optional(CONF_COMPENSATION_DAMPENING_FACTOR, default=0.8): cv.float_range(min=0.0, max=1.0),
+    cv.Optional(CONF_COMPENSATION_UPDATE_INTERVAL, default="5min"): cv.positive_time_period_milliseconds,
 }
 
 CONFIG_SCHEMA = cv.typed_schema(
@@ -135,3 +143,16 @@ async def to_code(config):
     if CONF_CURRENT_POWER_CONSUMPTION in config:
         sens = await sensor.new_sensor(config[CONF_CURRENT_POWER_CONSUMPTION])
         cg.add(var.set_current_power_consumption_sensor(sens))
+
+    if CONF_EXTERNAL_TEMPERATURE_SENSOR in config:
+        sens = await cg.get_variable(config[CONF_EXTERNAL_TEMPERATURE_SENSOR])
+        cg.add(var.set_external_temperature_sensor(sens))
+
+    if CONF_EXTERNAL_COMPENSATION_ENABLED in config:
+        cg.add(var.set_external_temperature_compensation_enabled(config[CONF_EXTERNAL_COMPENSATION_ENABLED]))
+
+    if CONF_COMPENSATION_DAMPENING_FACTOR in config:
+        cg.add(var.set_compensation_dampening_factor(config[CONF_COMPENSATION_DAMPENING_FACTOR]))
+
+    if CONF_COMPENSATION_UPDATE_INTERVAL in config:
+        cg.add(var.set_compensation_update_interval(config[CONF_COMPENSATION_UPDATE_INTERVAL]))

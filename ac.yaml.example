@@ -61,3 +61,11 @@ climate:
 
     # Useful when the ac does not report a current temperature (CZ-TACG1 only)
     # current_temperature_sensor: temperature_sensor_id
+
+    # External temperature compensation (CZ-TACG1 only)
+    # Uses a sensor (e.g., from Home Assistant) to automatically adjust AC target temperature
+    # to compensate for inaccurate internal AC sensor
+    # external_temperature_sensor: room_temp_sensor_id
+    # external_compensation_enabled: true
+    # compensation_dampening_factor: 0.8  # 0.0-1.0, how aggressively to compensate (0.8 = 80%)
+    # compensation_update_interval: 5min  # How often to recalculate and adjust target
