@@ -33,7 +33,9 @@ PanasonicACSelect = panasonic_ac_ns.class_(
 CONF_HORIZONTAL_SWING_SELECT = "horizontal_swing_select"
 CONF_VERTICAL_SWING_SELECT = "vertical_swing_select"
 CONF_OUTSIDE_TEMPERATURE = "outside_temperature"
+CONF_OUTSIDE_TEMPERATURE_OFFSET = "outside_temperature_offset"
 CONF_CURRENT_TEMPERATURE_SENSOR = "current_temperature_sensor"
+CONF_CURRENT_TEMPERATURE_OFFSET = "current_temperature_offset"
 CONF_NANOEX_SWITCH = "nanoex_switch"
 CONF_ECO_SWITCH = "eco_switch"
 CONF_ECONAVI_SWITCH = "econavi_switch"
@@ -68,6 +70,7 @@ SCHEMA = climate.climate_schema(PanasonicAC).extend(
             state_class=STATE_CLASS_MEASUREMENT,
         ),
         cv.Optional(CONF_NANOEX_SWITCH): SWITCH_SCHEMA,
+        cv.Optional(CONF_OUTSIDE_TEMPERATURE_OFFSET): cv.int_range(min=-5, max=5),
     }
 ).extend(uart.UART_DEVICE_SCHEMA)
 
@@ -85,6 +88,7 @@ CONFIG_SCHEMA = cv.typed_schema(
                 cv.Optional(CONF_ECONAVI_SWITCH): SWITCH_SCHEMA,
                 cv.Optional(CONF_MILD_DRY_SWITCH): SWITCH_SCHEMA,
                 cv.Optional(CONF_CURRENT_TEMPERATURE_SENSOR): cv.use_id(sensor.Sensor),
+                cv.Optional(CONF_CURRENT_TEMPERATURE_OFFSET): cv.int_range(min=-5, max=5),
                 cv.Optional(CONF_CURRENT_POWER_CONSUMPTION): sensor.sensor_schema(
                   unit_of_measurement=UNIT_WATT,
                   accuracy_decimals=0,
@@ -119,6 +123,9 @@ async def to_code(config):
         sens = await sensor.new_sensor(config[CONF_OUTSIDE_TEMPERATURE])
         cg.add(var.set_outside_temperature_sensor(sens))
 
+    if CONF_OUTSIDE_TEMPERATURE_OFFSET in config:
+        cg.add(var.set_outside_temperature_offset(config[CONF_OUTSIDE_TEMPERATURE_OFFSET]))
+
     for s in [CONF_ECO_SWITCH, CONF_NANOEX_SWITCH, CONF_MILD_DRY_SWITCH, CONF_ECONAVI_SWITCH]:
         if s in config:
             conf = config[s]
@@ -130,6 +137,9 @@ async def to_code(config):
     if CONF_CURRENT_TEMPERATURE_SENSOR in config:
         sens = await cg.get_variable(config[CONF_CURRENT_TEMPERATURE_SENSOR])
         cg.add(var.set_current_temperature_sensor(sens))
+
+    if CONF_CURRENT_TEMPERATURE_OFFSET in config:
+        cg.add(var.set_current_temperature_offset(config[CONF_CURRENT_TEMPERATURE_OFFSET]))
 
     if CONF_CURRENT_POWER_CONSUMPTION in config:
         sens = await sensor.new_sensor(config[CONF_CURRENT_POWER_CONSUMPTION])
