@@ -21,12 +21,12 @@ climate::ClimateTraits PanasonicAC::traits() {
   traits.set_supported_modes({climate::CLIMATE_MODE_OFF, climate::CLIMATE_MODE_HEAT_COOL, climate::CLIMATE_MODE_COOL,
                               climate::CLIMATE_MODE_HEAT, climate::CLIMATE_MODE_FAN_ONLY, climate::CLIMATE_MODE_DRY});
 
-  traits.set_supported_fan_modes({climate::CLIMATE_FAN_AUTO, climate::CLIMATE_FAN_LOW, climate::CLIMATE_FAN_MEDIUM, climate::CLIMATE_FAN_HIGH});
+  traits.set_supported_custom_fan_modes({"Automatic", "1", "2", "3", "4", "5"});
 
   traits.set_supported_swing_modes({climate::CLIMATE_SWING_OFF, climate::CLIMATE_SWING_BOTH,
                                     climate::CLIMATE_SWING_VERTICAL, climate::CLIMATE_SWING_HORIZONTAL});
 
-  traits.set_supported_presets({climate::CLIMATE_PRESET_COMFORT, climate::CLIMATE_PRESET_BOOST, climate::CLIMATE_PRESET_ECO});
+  traits.set_supported_custom_presets({"Normal", "Powerful", "Quiet"});
 
   return traits;
 }
@@ -89,7 +89,7 @@ void PanasonicAC::update_current_temperature(int8_t temperature) {
 }
 
 void PanasonicAC::update_target_temperature(uint8_t raw_value) {
-  float temperature = (raw_value * TEMPERATURE_STEP);
+  float temperature = raw_value * TEMPERATURE_STEP;
   ESP_LOGV(TAG, "Received target temperature %.2f", temperature);
 
   temperature += this->current_temperature_offset_;

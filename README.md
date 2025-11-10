@@ -93,10 +93,6 @@ Examples:
 - E.g. actual temperature = 20°, AC measured temperature = 22° --> offset = -2°
 
 
-## Upgrading from 1.x to 2.x
-
-[Upgrade instructions](README.UPGRADING.md)
-
 # Hardware installation
 
 [Hardware installation for DNSK-P11](README.DNSKP11.md)

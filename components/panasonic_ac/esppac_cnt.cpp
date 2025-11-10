@@ -81,49 +81,31 @@ void PanasonicACCNT::control(const climate::ClimateCall &call) {
     this->cmd[1] = (*call.get_target_temperature() - this->current_temperature_offset_) / TEMPERATURE_STEP;
   }
 
-  if (call.get_fan_mode().has_value()) {
+  if (call.get_custom_fan_mode().has_value()) {
     ESP_LOGV(TAG, "Requested fan mode change");
 
-    if(this->preset != climate::CLIMATE_PRESET_COMFORT)
+    if(this->custom_preset != "Normal")
     {
       ESP_LOGV(TAG, "Resetting preset");
       this->cmd[5] = (this->cmd[5] & 0xF0);  // Clear right nib for normal mode
     }
 
-    switch (*call.get_fan_mode()) {
-      case climate::CLIMATE_FAN_LOW:
-        this->cmd[3] = 0x30;
-        break;
-      case climate::CLIMATE_FAN_MEDIUM:
-        this->cmd[3] = 0x50;
-        break;
-      case climate::CLIMATE_FAN_HIGH:
-        this->cmd[3] = 0x70;
-        break;
-      case climate::CLIMATE_FAN_AUTO:
-        this->cmd[3] = 0xA0;
-        break;
-      default:
-        ESP_LOGV(TAG, "Unsupported mode requested");
-        break;
-    }
+    std::string fanMode = *call.get_custom_fan_mode();
 
-    // std::string fanMode = *call.get_custom_fan_mode();
-
-    // if (fanMode == climate::CLIMATE_FAN_AUTO)
-    //   this->cmd[3] = 0xA0;
-    // else if (fanMode == climate::CLIMATE_FAN_LOW)
-    //   this->cmd[3] = 0x30;
-    // else if (fanMode == "2")
-    //   this->cmd[3] = 0x40;
-    // else if (fanMode == climate::CLIMATE_FAN_MEDIUM)
-    //   this->cmd[3] = 0x50;
-    // else if (fanMode == "4")
-    //   this->cmd[3] = 0x60;
-    // else if (fanMode == climate::CLIMATE_FAN_HIGH)
-    //   this->cmd[3] = 0x70;
-    // else
-    //   ESP_LOGV(TAG, "Unsupported fan mode requested");
+    if (fanMode == "Automatic")
+      this->cmd[3] = 0xA0;
+    else if (fanMode == "1")
+      this->cmd[3] = 0x30;
+    else if (fanMode == "2")
+      this->cmd[3] = 0x40;
+    else if (fanMode == "3")
+      this->cmd[3] = 0x50;
+    else if (fanMode == "4")
+      this->cmd[3] = 0x60;
+    else if (fanMode == "5")
+      this->cmd[3] = 0x70;
+    else
+      ESP_LOGV(TAG, "Unsupported fan mode requested");
   }
 
   if (call.get_swing_mode().has_value()) {
@@ -148,32 +130,21 @@ void PanasonicACCNT::control(const climate::ClimateCall &call) {
     }
   }
 
-  if (call.get_preset().has_value()) {
+  if (call.get_custom_preset().has_value()) {
     ESP_LOGV(TAG, "Requested preset change");
 
-    switch (*call.get_preset()) {
-      case climate::CLIMATE_PRESET_COMFORT:
-        this->cmd[5] = (this->cmd[5] & 0xF0);  // Clear right nib for normal mode
-        break;
-      case climate::CLIMATE_PRESET_BOOST:
-        this->cmd[5] = (this->cmd[5] & 0xF0) + 0x02;  // Clear right nib and set powerful mode
-        break;
-      case climate::CLIMATE_PRESET_ECO:
-        this->cmd[5] = (this->cmd[5] & 0xF0) + 0x04;  // Clear right nib and set quiet mode
-        break;
+    std::string preset = *call.get_custom_preset();
 
-    // std::string preset = *call.get_custom_preset();
-
-    // if (preset.compare(climate::CLIMATE_PRESET_COMFORT) == 0)
-    //   this->cmd[5] = (this->cmd[5] & 0xF0);  // Clear right nib for normal mode
-    // else if (preset.compare(climate::CLIMATE_PRESET_BOOST) == 0)
-    //   this->cmd[5] = (this->cmd[5] & 0xF0) + 0x02;  // Clear right nib and set powerful mode
-    // else if (preset.compare(climate::CLIMATE_PRESET_QUIET) == 0)
-    //   this->cmd[5] = (this->cmd[5] & 0xF0) + 0x04;  // Clear right nib and set quiet mode
-    // else
-    //   ESP_LOGV(TAG, "Unsupported preset requested");
-    }
+    if (preset.compare("Normal") == 0)
+      this->cmd[5] = (this->cmd[5] & 0xF0);  // Clear right nib for normal mode
+    else if (preset.compare("Powerful") == 0)
+      this->cmd[5] = (this->cmd[5] & 0xF0) + 0x02;  // Clear right nib and set powerful mode
+    else if (preset.compare("Quiet") == 0)
+      this->cmd[5] = (this->cmd[5] & 0xF0) + 0x04;  // Clear right nib and set quiet mode
+    else
+      ESP_LOGV(TAG, "Unsupported preset requested");
   }
+
 }
 
 /*
@@ -181,12 +152,12 @@ void PanasonicACCNT::control(const climate::ClimateCall &call) {
  */
 void PanasonicACCNT::set_data(bool set) {
   this->mode = determine_mode(this->data[0]);
-  this->fan_mode = determine_fan_speed(this->data[3]);
+  this->custom_fan_mode = determine_fan_speed(this->data[3]);
 
   std::string verticalSwing = determine_vertical_swing(this->data[4]);
   std::string horizontalSwing = determine_horizontal_swing(this->data[4]);
 
-  climate::ClimatePreset preset = determine_preset(this->data[5]);
+  std::string preset = determine_preset(this->data[5]);
   bool nanoex = determine_preset_nanoex(this->data[5]);
   bool eco = determine_eco(this->data[8]);
   bool econavi = determine_econavi(this->data[5]);
@@ -234,7 +205,7 @@ void PanasonicACCNT::set_data(bool set) {
   this->update_swing_vertical(verticalSwing);
   this->update_swing_horizontal(horizontalSwing);
 
-  this->preset = preset;
+  this->custom_preset = preset;
 
   this->update_nanoex(nanoex);
   this->update_eco(eco);
@@ -374,23 +345,23 @@ climate::ClimateMode PanasonicACCNT::determine_mode(uint8_t mode) {
   }
 }
 
-climate::ClimateFanMode PanasonicACCNT::determine_fan_speed(uint8_t speed) {
+std::string PanasonicACCNT::determine_fan_speed(uint8_t speed) {
   switch (speed) {
     case 0xA0:  // Auto
-      return climate::CLIMATE_FAN_AUTO;
+      return "Automatic";
     case 0x30:  // 1
-      return climate::CLIMATE_FAN_LOW;
+      return "1";
     case 0x40:  // 2
-      return climate::CLIMATE_FAN_LOW;
+      return "2";
     case 0x50:  // 3
-      return climate::CLIMATE_FAN_MEDIUM;
+      return "3";
     case 0x60:  // 4
-      return climate::CLIMATE_FAN_HIGH;
+      return "4";
     case 0x70:  // 5
-      return climate::CLIMATE_FAN_HIGH;
+      return "5";
     default:
       ESP_LOGW(TAG, "Received unknown fan speed");
-      return climate::CLIMATE_FAN_AUTO;
+      return "Unknown";
   }
 }
 
@@ -444,19 +415,19 @@ std::string PanasonicACCNT::determine_horizontal_swing(uint8_t swing) {
   }
 }
 
-climate::ClimatePreset PanasonicACCNT::determine_preset(uint8_t preset) {
+std::string PanasonicACCNT::determine_preset(uint8_t preset) {
   uint8_t nib = (preset >> 0) & 0x0F;  // Right nib for preset (powerful/quiet)
 
   switch (nib) {
     case 0x02:
-      return climate::CLIMATE_PRESET_BOOST;
+      return "Powerful";
     case 0x04:
-      return climate::CLIMATE_PRESET_ECO;
+      return "Quiet";
     case 0x00:
-      return climate::CLIMATE_PRESET_COMFORT;
+      return "Normal";
     default:
       ESP_LOGW(TAG, "Received unknown preset");
-      return climate::CLIMATE_PRESET_COMFORT;
+      return "Normal";
   }
 }
 
