@@ -107,6 +107,11 @@ async def to_code(config):
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
 
+    # If external temperature sensor is used, ensure homeassistant component is loaded
+    if CONF_EXTERNAL_TEMPERATURE_SENSOR in config:
+        cg.add_define("USE_HOMEASSISTANT_IMPORT")
+        await cg.get_variable(config[CONF_EXTERNAL_TEMPERATURE_SENSOR])
+
     if CONF_HORIZONTAL_SWING_SELECT in config:
         conf = config[CONF_HORIZONTAL_SWING_SELECT]
         swing_select = await select.new_select(conf, options=HORIZONTAL_SWING_OPTIONS)
@@ -145,6 +150,8 @@ async def to_code(config):
         cg.add(var.set_current_power_consumption_sensor(sens))
 
     if CONF_EXTERNAL_TEMPERATURE_SENSOR in config:
+        # Ensure homeassistant component is loaded if using a HA sensor
+        # This is needed to link against homeassistant sensor library
         sens = await cg.get_variable(config[CONF_EXTERNAL_TEMPERATURE_SENSOR])
         cg.add(var.set_external_temperature_sensor(sens))
 
