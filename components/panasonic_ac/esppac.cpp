@@ -277,32 +277,40 @@ void PanasonicAC::set_current_power_consumption_sensor(sensor::Sensor *current_p
 
 void PanasonicAC::set_external_temperature_sensor(sensor::Sensor *external_temperature_sensor) {
   this->external_temperature_sensor_ = external_temperature_sensor;
+  ESP_LOGI(TAG, "External temperature sensor configured");
 
   // Set up callback to trigger compensation when external temp changes
   if (external_temperature_sensor != nullptr) {
     external_temperature_sensor->add_on_state_callback([this](float state) {
+      ESP_LOGD(TAG, "External temperature sensor callback: %.1f°C (compensation %s)", 
+               state, this->external_compensation_enabled_ ? "ENABLED" : "DISABLED");
       if (this->external_compensation_enabled_) {
-        ESP_LOGV(TAG, "External temperature updated: %.1f°C", state);
-        // Compensation will be applied in next loop cycle
+        // Force immediate compensation check on sensor update
+        this->last_compensation_update_ = 0;
       }
     });
   }
 }
 
 void PanasonicAC::set_external_temperature_compensation_enabled(bool enabled) {
-  ESP_LOGD(TAG, "External temperature compensation: %s", enabled ? "ENABLED" : "DISABLED");
   this->external_compensation_enabled_ = enabled;
+  if (enabled) {
+    ESP_LOGI(TAG, "✓ External temperature compensation: ENABLED");
+  } else {
+    ESP_LOGI(TAG, "External temperature compensation: DISABLED");
+  }
 }
 
 void PanasonicAC::set_compensation_dampening_factor(float factor) {
   // Clamp between 0.0 and 1.0
   this->compensation_dampening_factor_ = std::max(0.0f, std::min(1.0f, factor));
-  ESP_LOGD(TAG, "Compensation dampening factor: %.2f", this->compensation_dampening_factor_);
+  ESP_LOGI(TAG, "Compensation dampening factor: %.2f (%.0f%% correction)", 
+           this->compensation_dampening_factor_, this->compensation_dampening_factor_ * 100);
 }
 
 void PanasonicAC::set_compensation_update_interval(uint32_t interval_ms) {
   this->compensation_update_interval_ = interval_ms;
-  ESP_LOGD(TAG, "Compensation update interval: %u ms", interval_ms);
+  ESP_LOGI(TAG, "Compensation update interval: %u ms (%.1f min)", interval_ms, interval_ms / 60000.0f);
 }
 
 void PanasonicAC::update_temperature_compensation() {
@@ -321,9 +329,14 @@ void PanasonicAC::update_temperature_compensation() {
   // Get external temperature
   float external_temp = this->external_temperature_sensor_->state;
 
+  ESP_LOGD(TAG, "Temperature compensation check:");
+  ESP_LOGD(TAG, "  External sensor reading: %.1f°C", external_temp);
+  ESP_LOGD(TAG, "  User target temperature: %.1f°C", this->user_target_temperature_);
+  ESP_LOGD(TAG, "  Current AC target: %.1f°C", this->target_temperature);
+
   // Validate sensor reading
   if (std::isnan(external_temp) || external_temp < -10 || external_temp > 50) {
-    ESP_LOGW(TAG, "Invalid external temperature reading: %.1f°C", external_temp);
+    ESP_LOGW(TAG, "Invalid external temperature reading: %.1f°C - skipping compensation", external_temp);
     return;
   }
 
@@ -335,6 +348,10 @@ void PanasonicAC::update_temperature_compensation() {
   float compensation = temp_error * this->compensation_dampening_factor_;
   this->calculated_ac_target_ = this->user_target_temperature_ - compensation;
 
+  ESP_LOGD(TAG, "  Temperature error: %.1f°C", temp_error);
+  ESP_LOGD(TAG, "  Compensation (×%.2f): %.1f°C", this->compensation_dampening_factor_, compensation);
+  ESP_LOGD(TAG, "  Calculated AC target: %.1f°C", this->calculated_ac_target_);
+
   // Clamp to AC limits
   this->calculated_ac_target_ = std::max(
       static_cast<float>(MIN_TEMPERATURE),
@@ -343,10 +360,12 @@ void PanasonicAC::update_temperature_compensation() {
   // Round to AC's temperature step (0.5°C)
   this->calculated_ac_target_ = std::round(this->calculated_ac_target_ / TEMPERATURE_STEP) * TEMPERATURE_STEP;
 
+  ESP_LOGD(TAG, "  After clamping & rounding: %.1f°C", this->calculated_ac_target_);
+
   // Only send update if significantly different (> 0.5°C hysteresis)
-  if (std::abs(this->target_temperature - this->calculated_ac_target_) > 0.5f) {
-    ESP_LOGI(TAG,
-             "Compensation: External=%.1f°C, Desired=%.1f°C, Error=%.1f°C, AC Target: %.1f°C → %.1f°C",
+  float delta = std::abs(this->target_temperature - this->calculated_ac_target_);
+  if (delta > 0.5f) {
+    ESP_LOGI(TAG, "🎯 COMPENSATION APPLIED: Ext=%.1f°C, Target=%.1f°C, Error=%.1f°C → AC: %.1f°C → %.1f°C",
              external_temp, this->user_target_temperature_, temp_error, this->target_temperature,
              this->calculated_ac_target_);
 
@@ -358,7 +377,7 @@ void PanasonicAC::update_temperature_compensation() {
     call.set_target_temperature(this->calculated_ac_target_);
     call.perform();
   } else {
-    ESP_LOGV(TAG, "Compensation: No adjustment needed (delta < 0.5°C)");
+    ESP_LOGD(TAG, "  ✓ No adjustment needed (delta %.1f°C < 0.5°C threshold)", delta);
   }
 }
 
