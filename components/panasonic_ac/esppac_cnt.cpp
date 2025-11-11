@@ -680,9 +680,9 @@ void PanasonicACCNT::apply_compensation_update() {
   }
 
   // Calculate the raw value to send to AC hardware
-  // The AC expects a raw value that will be multiplied by TEMPERATURE_STEP and then offset is added
-  // So we need to reverse that: (desired_temp - offset) / step
-  uint8_t raw_value = (this->calculated_ac_target_ - this->current_temperature_offset_) / TEMPERATURE_STEP;
+  // The calculated_ac_target is already the final temperature we want
+  // Just convert to raw value (the offset is NOT applied in compensation mode)
+  uint8_t raw_value = this->calculated_ac_target_ / TEMPERATURE_STEP;
   
   ESP_LOGD(TAG, "Applying compensation: User wants=%.1f°C, AC hardware set to=%.1f°C (raw=%d)", 
            this->user_target_temperature_, this->calculated_ac_target_, raw_value);
