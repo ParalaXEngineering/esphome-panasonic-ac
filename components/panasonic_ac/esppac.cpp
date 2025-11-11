@@ -102,8 +102,18 @@ void PanasonicAC::update_target_temperature(uint8_t raw_value) {
     return;
   }
 
-  this->target_temperature = temperature;
-  ESP_LOGV(TAG, "Target temperature incl. offset: %.2f", temperature);
+  // When external compensation is enabled, don't update the displayed target
+  // The displayed target should always be what the USER wants, not what the AC has
+  if (this->external_compensation_enabled_) {
+    ESP_LOGV(TAG, "Target temperature from AC: %.2f (ignored - using user target: %.2f)", 
+             temperature, this->user_target_temperature_);
+    // Update target_temperature to user's desired value for display
+    this->target_temperature = this->user_target_temperature_;
+  } else {
+    // Normal mode: show what the AC has
+    this->target_temperature = temperature;
+    ESP_LOGV(TAG, "Target temperature incl. offset: %.2f", temperature);
+  }
 }
 
 void PanasonicAC::update_swing_horizontal(const std::string &swing) {
