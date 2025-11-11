@@ -41,9 +41,7 @@ void PanasonicAC::setup() {
 
 void PanasonicAC::loop() {
   read_data();  // Read data from UART (if there is any)
-
-  // Check and apply temperature compensation periodically
-  update_temperature_compensation();
+  // Note: CNT and WLAN subclasses override this and handle compensation themselves
 }
 
 void PanasonicAC::read_data() {
@@ -93,7 +91,7 @@ void PanasonicAC::update_current_temperature(int8_t temperature) {
 
 void PanasonicAC::update_target_temperature(uint8_t raw_value) {
   float temperature = raw_value * TEMPERATURE_STEP;
-  ESP_LOGV(TAG, "Received target temperature %.2f", temperature);
+  ESP_LOGV(TAG, "Received target temperature raw=%d (%.2f°C before offset)", raw_value, temperature);
 
   temperature += this->current_temperature_offset_;
 
@@ -102,12 +100,13 @@ void PanasonicAC::update_target_temperature(uint8_t raw_value) {
     return;
   }
 
-  // When external compensation is enabled, don't update the displayed target
-  // The displayed target should always be what the USER wants, not what the AC has
+  // When external compensation is enabled, the displayed target should ALWAYS
+  // be what the USER wants, not what the AC hardware is set to
   if (this->external_compensation_enabled_) {
-    ESP_LOGV(TAG, "Target temperature from AC: %.2f (ignored - using user target: %.2f)", 
+    // Don't update displayed target from AC - keep showing user's desired temp
+    ESP_LOGV(TAG, "AC hardware target: %.2f°C (ignored - display shows user target: %.2f°C)", 
              temperature, this->user_target_temperature_);
-    // Update target_temperature to user's desired value for display
+    // Keep the target as the user's desired value
     this->target_temperature = this->user_target_temperature_;
   } else {
     // Normal mode: show what the AC has
@@ -326,23 +325,23 @@ void PanasonicAC::set_compensation_update_interval(uint32_t interval_ms) {
 void PanasonicAC::update_temperature_compensation() {
   // Only run if enabled and we have an external sensor
   if (!this->external_compensation_enabled_) {
-    ESP_LOGVV(TAG, "Compensation skipped: not enabled");
     return;
   }
   
   if (this->external_temperature_sensor_ == nullptr) {
-    ESP_LOGVV(TAG, "Compensation skipped: no external sensor");
     return;
   }
 
   // Rate limiting: only update every X minutes
   uint32_t now = millis();
   uint32_t time_since_last = now - this->last_compensation_update_;
-  if (time_since_last < this->compensation_update_interval_) {
-    ESP_LOGVV(TAG, "Compensation skipped: timer (%.1f/%.1f min)", 
-             time_since_last / 60000.0f, this->compensation_update_interval_ / 60000.0f);
+  
+  // Skip if not enough time has passed (unless forced with last_compensation_update_ = 0)
+  if (this->last_compensation_update_ != 0 && time_since_last < this->compensation_update_interval_) {
     return;
   }
+  
+  // Update the timer NOW (at start of calculation)
   this->last_compensation_update_ = now;
 
   // Get external temperature
@@ -381,20 +380,16 @@ void PanasonicAC::update_temperature_compensation() {
 
   ESP_LOGD(TAG, "  After clamping & rounding: %.1f°C", this->calculated_ac_target_);
 
-  // Only send update if significantly different (> 0.5°C hysteresis)
-  float delta = std::abs(this->target_temperature - this->calculated_ac_target_);
+  // Check if we need to update (> 0.5°C hysteresis)
+  float delta = std::abs(this->calculated_ac_target_ - 
+                         ((this->target_temperature - this->current_temperature_offset_) * TEMPERATURE_STEP));
+  
   if (delta > 0.5f) {
-    ESP_LOGI(TAG, "🎯 COMPENSATION APPLIED: Ext=%.1f°C, Target=%.1f°C, Error=%.1f°C → AC: %.1f°C → %.1f°C",
-             external_temp, this->user_target_temperature_, temp_error, this->target_temperature,
-             this->calculated_ac_target_);
-
-    // Update the AC target (this will be sent in next control cycle)
-    this->target_temperature = this->calculated_ac_target_;
-
-    // Trigger control update
-    climate::ClimateCall call = this->make_call();
-    call.set_target_temperature(this->calculated_ac_target_);
-    call.perform();
+    ESP_LOGI(TAG, "🎯 COMPENSATION UPDATE: Ext=%.1f°C, User wants=%.1f°C, Error=%.1f°C → Setting AC to: %.1f°C",
+             external_temp, this->user_target_temperature_, temp_error, this->calculated_ac_target_);
+    
+    // Mark that we need to send an update
+    this->compensation_update_pending_ = true;
   } else {
     ESP_LOGD(TAG, "  ✓ No adjustment needed (delta %.1f°C < 0.5°C threshold)", delta);
   }

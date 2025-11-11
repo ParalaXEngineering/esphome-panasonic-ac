@@ -33,6 +33,14 @@ void PanasonicACCNT::loop() {
   }
   handle_cmd();
   handle_poll();  // Handle sending poll packets
+  
+  // Update temperature compensation periodically
+  update_temperature_compensation();
+  
+  // Apply pending compensation updates
+  if (this->compensation_update_pending_) {
+    apply_compensation_update();
+  }
 }
 
 /*
@@ -82,16 +90,14 @@ void PanasonicACCNT::control(const climate::ClimateCall &call) {
       this->user_target_temperature_ = *call.get_target_temperature();
       ESP_LOGD(TAG, "User requested target temp: %.2f°C", this->user_target_temperature_);
 
-      // Force immediate compensation update
+      // Update displayed target to user's request
+      this->target_temperature = this->user_target_temperature_;
+
+      // Force immediate compensation update on next loop
       this->last_compensation_update_ = 0;
-      this->update_temperature_compensation();
       
-      // The compensation will set the actual AC target via another call
-      // For now, set the cmd to the calculated compensated value
-      ESP_LOGD(TAG, "Setting AC hardware to compensated target: %.2f°C (raw: %.2f)", 
-               this->calculated_ac_target_, 
-               (this->calculated_ac_target_ - this->current_temperature_offset_) / TEMPERATURE_STEP);
-      this->cmd[1] = (this->calculated_ac_target_ - this->current_temperature_offset_) / TEMPERATURE_STEP;
+      // Don't set cmd yet - let update_temperature_compensation() calculate the right value
+      // It will be applied in the next loop iteration via apply_compensation_update()
     } else {
       // Normal mode: directly set AC target with static offset
       ESP_LOGV(TAG, "Requested target temp change to %.2f, %.2f including offset", *call.get_target_temperature(),
@@ -653,6 +659,35 @@ void PanasonicACCNT::on_mild_dry_change(bool state) {
     this->cmd[2] = 0x80;
   }
 
+}
+
+void PanasonicACCNT::apply_compensation_update() {
+  if (!this->external_compensation_enabled_) {
+    return;
+  }
+
+  if (this->state_ != ACState::Ready) {
+    return;
+  }
+
+  // Clear the pending flag
+  this->compensation_update_pending_ = false;
+
+  // Prepare command buffer if needed
+  if (this->cmd.empty()) {
+    ESP_LOGV(TAG, "Copying data to cmd for compensation update");
+    this->cmd = this->data;
+  }
+
+  // Calculate the raw value to send to AC hardware
+  // The AC expects a raw value that will be multiplied by TEMPERATURE_STEP and then offset is added
+  // So we need to reverse that: (desired_temp - offset) / step
+  uint8_t raw_value = (this->calculated_ac_target_ - this->current_temperature_offset_) / TEMPERATURE_STEP;
+  
+  ESP_LOGD(TAG, "Applying compensation: User wants=%.1f°C, AC hardware set to=%.1f°C (raw=%d)", 
+           this->user_target_temperature_, this->calculated_ac_target_, raw_value);
+  
+  this->cmd[1] = raw_value;
 }
 
 }  // namespace CNT

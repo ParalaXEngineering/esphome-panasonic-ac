@@ -69,6 +69,7 @@ class PanasonicAC : public Component, public uart::UARTDevice, public climate::C
   float compensation_dampening_factor_ = 0.8f;              // How much to compensate (0.0-1.0)
   uint32_t compensation_update_interval_ = 300000;          // Update every 5 min (300000ms)
   uint32_t last_compensation_update_ = 0;                   // Last update timestamp
+  bool compensation_update_pending_ = false;                // Flag to trigger cmd update
 
   float user_target_temperature_ = 22.0f;                   // What user actually wants
   float calculated_ac_target_ = 22.0f;                      // What we send to AC

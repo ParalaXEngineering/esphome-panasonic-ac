@@ -31,6 +31,8 @@ class PanasonicACCNT : public PanasonicAC {
   void setup() override;
   void loop() override;
 
+  void apply_compensation_update();  // Apply calculated compensation to cmd buffer
+
  protected:
   ACState state_ = ACState::Initializing;  // Stores the internal state of the AC, used during initialization
 

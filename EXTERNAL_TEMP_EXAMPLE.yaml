@@ -1,0 +1,108 @@
+# Example ESPHome configuration demonstrating external temperature compensation
+# This shows how to import a Home Assistant temperature sensor and use it
+# to automatically compensate for the Panasonic AC's inaccurate internal sensor
+
+esphome:
+  name: panasonic-ac
+  platform: ESP32
+  board: nodemcu-32s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap: {}
+
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  password: !secret ota_password
+
+uart:
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 9600
+  parity: EVEN
+
+external_components:
+  source: github://DomiStyle/esphome-panasonic-ac
+  components: [panasonic_ac]
+
+# OPTION A: Import temperature from Home Assistant
+# This is the recommended approach - use any sensor from HA
+sensor:
+  - platform: homeassistant
+    id: room_temp_from_ha
+    entity_id: sensor.living_room_temperature  # Change to your HA sensor entity
+    internal: true  # Hide from HA (it's already there)
+
+# OPTION B: Use a local sensor connected to the ESP
+# Uncomment if you have a sensor directly connected to your ESP
+# sensor:
+#   - platform: dht
+#     pin: GPIO4
+#     model: DHT22
+#     temperature:
+#       name: "Room Temperature"
+#       id: room_temp_local
+#     humidity:
+#       name: "Room Humidity"
+#     update_interval: 30s
+
+climate:
+  - platform: panasonic_ac
+    type: cnt  # Use 'wlan' for DNSK-P11
+    name: Panasonic AC
+    
+    # Standard features
+    horizontal_swing_select:
+      name: Panasonic AC Horizontal Swing Mode
+    vertical_swing_select:
+      name: Panasonic AC Vertical Swing Mode
+    outside_temperature:
+      name: Panasonic AC Outside Temperature
+    
+    # Enable switches as needed
+    eco_switch:
+      name: Panasonic AC Eco Switch
+    # nanoex_switch:
+    #   name: Panasonic AC NanoeX Switch
+    
+    # EXTERNAL TEMPERATURE COMPENSATION SETUP
+    # This is the key configuration for automatic compensation
+    
+    # Option A: Use Home Assistant sensor
+    external_temperature_sensor: room_temp_from_ha
+    
+    # Option B: Use local sensor (uncomment if using Option B above)
+    # external_temperature_sensor: room_temp_local
+    
+    # Enable the compensation feature
+    external_compensation_enabled: true
+    
+    # Dampening factor (0.0 to 1.0)
+    # - 1.0 = 100% compensation (aggressive, may overshoot)
+    # - 0.8 = 80% compensation (recommended starting point)
+    # - 0.5 = 50% compensation (conservative, slower response)
+    compensation_dampening_factor: 0.8
+    
+    # How often to recalculate and adjust (default: 5min)
+    # Lower values = more responsive but may oscillate
+    # Higher values = more stable but slower to reach target
+    compensation_update_interval: 5min
+
+# Example: How this works in practice
+# 
+# 1. User sets AC to 22°C via Home Assistant
+# 2. External sensor reads actual room temp: 24°C
+# 3. Temperature error = 24°C - 22°C = 2°C (too warm)
+# 4. Compensation = 2°C × 0.8 = 1.6°C
+# 5. AC target adjusted to: 22°C - 1.6°C = 20.4°C → rounds to 20°C
+# 6. AC cools until external sensor reaches 22°C
+#
+# The user always sees and sets 22°C, but the AC internally
+# works with compensated values to achieve the actual target.
